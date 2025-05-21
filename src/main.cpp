@@ -13,6 +13,8 @@
 #include <BlynkSimpleEsp32.h>
 
 #define PIN_SG90 16
+const int trigPin = 5;
+const int echoPin = 4;
 
 // WiFi credentials
 const char *ssid = "DESKTOP-1F240GG 6175";
@@ -26,6 +28,8 @@ Servo sg90;
 
 unsigned char index_t = 0;
 unsigned char error_in = 0;
+long duration;
+float distance;
 
 // init keypad
 const byte ROWS = 4; // four rows
@@ -39,6 +43,8 @@ char hexaKeys[ROWS][COLS] = {
     {'*', '0', '#', 'D'}};
 byte rowPins[ROWS] = {14, 27, 26, 25}; // connect to the row pinouts of the keypad
 byte colPins[COLS] = {33, 32, 18, 19}; // connect to the column pinouts of the keypad
+
+
 
 int addr = 0;
 char password[6] = "99999";     // Mat Khau mac dịnh
@@ -230,11 +236,11 @@ void openDoor()
     lcd.setCursor(1, 0);
     lcd.print("---OPENDOOR---");
     Serial.println("Door opening...");
-    sg90.write(180);
+    sg90.write(90);
     delay(5000);
     sg90.write(0);
     lcd.clear();
-
+    Blynk.logEvent("Opened_door", "");
     Blynk.virtualWrite(V0, LOW);
     index_t = 0;
 }
@@ -323,8 +329,10 @@ void changePass() {// Thay đổi mật khẩu
         delay(1000);
         writeEpprom(new_pass2);  // Lưu mật khẩu mới vào EEPROM
         insertData(password, new_pass2);
+        Blynk.logEvent("change_password", "" );
     }
     lcd.clear();
+    Blynk.virtualWrite(V1, LOW);
     index_t = 0;
 }
 
@@ -386,8 +394,10 @@ void resetPass()
                     delay(1000);
                     writeEpprom(pass_def);
                     insertData(password, pass_def);
+                    Blynk.logEvent("reset_password", "" );
                     lcd.setCursor(0, 0);
                     lcd.print("---Reset ok---");
+                    Blynk.virtualWrite(V2, LOW);
                     delay(1000);
                     lcd.clear();
                     break;
@@ -421,6 +431,20 @@ void handleOpenDoor()
     }
 }
 
+float readDistanceCM() {
+    digitalWrite(trigPin, LOW);
+    delayMicroseconds(2);
+    digitalWrite(trigPin, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(trigPin, LOW);
+
+    duration = pulseIn(echoPin, HIGH, 30000); // timeout 30ms
+    if (duration == 0) return -1; // nếu không đọc được
+    distance = duration * 0.034 / 2;
+    return distance;
+}
+
+
 void setup()
 {
     Serial.begin(9600);
@@ -447,6 +471,8 @@ void setup()
     sg90.setPeriodHertz(50);
     sg90.attach(PIN_SG90, 500, 2400);
     pinMode(button, INPUT_PULLUP);
+    pinMode(trigPin, OUTPUT);
+    pinMode(echoPin, INPUT);
     lcd.init();
     lcd.backlight();
     lcd.print("   SYSTEM INIT   ");
@@ -458,17 +484,17 @@ void setup()
 
     Serial.print("PASSWORK: ");
     Serial.println(password);
+
 }
 
 void loop()
 {
     server.handleClient();
-
     Blynk.run();
     lcd.setCursor(1, 0);
     lcd.print("Enter Password");
     checkPass();
-    if (digitalRead(button) == 0) {
+    if (digitalRead(button) == 0 || readDistanceCM() < 7) {
         openDoor();
     }
     while (index_t == 1)
@@ -478,30 +504,30 @@ void loop()
         for (int i = 1; i < 5; i++) {
             newPassword += (char)EEPROM.read(i);
         }
-        Blynk.logEvent("NOTIFICATION", "New password: " + newPassword);
+
         error_pass = 0;
     }
 
     while (index_t == 2)
     {
         resetPass();
-        Blynk.logEvent("NOTIFICATION", "Password: 99999");
         error_pass = 0;
     }
 
     while (index_t == 3)
     {
-        Blynk.logEvent("NOTIFICATION", "Opened door.");
+        
         openDoor();
         error_pass = 0;
     }
 
     while (index_t == 4)
     {
-        Blynk.logEvent("WARNING", "Wrong password.");
+        Blynk.logEvent("warning", "Wrong password.");
         error();
         error_pass = 0;
     }
+    Serial.println(readDistanceCM());
 }
 
 BLYNK_WRITE(V0)
